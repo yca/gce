@@ -24,6 +24,7 @@
             </intent-filter>
         </activity>
         <service android:name="ForwarderService"></service>
+        <activity android:name="EcgGraphViewActivity"></activity>
     </application>
 
 </manifest>
