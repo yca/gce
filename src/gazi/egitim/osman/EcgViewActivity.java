@@ -43,6 +43,7 @@ import android.widget.ListView;
 import android.widget.TabHost;
 import android.widget.Toast;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
 
@@ -63,89 +64,121 @@ public class EcgViewActivity extends TabActivity {
 	private ServerConnection mServer;
 	private TabHost mTabHost;
 	private GraphView mGraphView;
+	boolean useRealData = true;
+	int sps;
+	int passed = 0;
+	int spsTotal = 0;
 	
 	private Queue<Float> gBuffer = new LinkedList<Float>();
+	
+	private void initGraphics() {
+		float[] data = new float[500];
+		Random generator = new Random();
+		for (int i = 0; i < data.length; i++) {
+			data[i] = generator.nextFloat() * 32768;
+		}
+		initGraphics(data);
+	}
+	
+	private void initGraphics(float[] data) {
+		String[] verlabels = new String[] { "32768", "0", "-32768" };
+		String[] horlabels = new String[] { "0", "100", "200", "300", "400", "500" };
+		mGraphView = new GraphView(EcgViewActivity.this, 
+				data, "GraphViewDemo",horlabels, verlabels, GraphView.LINE);
+		LinearLayout layout = (LinearLayout) findViewById(R.id.GraphLayout1);
+		layout.addView(mGraphView);
+		if (!useRealData)
+			mHandler.postDelayed(mGraphUpdateTask, 1000);
+	}
+	
+	private void initTabs(int current) {
+    	mTabHost.addTab(mTabHost.newTabSpec("tab_test1").setIndicator("Cihaz").setContent(R.id.ListView1));
+        mTabHost.addTab(mTabHost.newTabSpec("tab_test2").setIndicator("TAB 2").setContent(R.id.gridview1));
+        mTabHost.addTab(mTabHost.newTabSpec("tab_test3").setIndicator("TAB 3").setContent(R.id.textview2));
+        mTabHost.addTab(mTabHost.newTabSpec("tab_test4").setIndicator("Grafik").setContent(R.id.GraphLayout1));
+        mTabHost.setCurrentTab(current);
+	}
+	
+	private void initThreads() {
+		mServer = new ServerConnection();
+        new Thread(mServer).start();
+        //new Thread(new ClientThread()).start();
+	}
+	
+	private void initBtDevices() {
+		devicesListView = (ListView)findViewById(R.id.ListView1);
+        devicesListView.setOnItemClickListener(new OnItemClickListener() {
+        	public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+        		String macaddr = arrayAdapter.getItem(position).split("\n")[1];
+        		//BluetoothDevice device = mBluetoothAdapter.getRemoteDevice("00:1D:43:00:C3:E0");
+        		BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(macaddr);
+        		currentDeviceIndex = position;
+        		try {
+        			mConnectThread = new ConnectThread(device);
+        			mConnectThread.start();
+				} catch (Exception e) {
+					// TODO: handle exception
+					Toast.makeText(getApplicationContext(), e.toString(), 2000).show();
+				}
+        	}
+        });
+        arrayAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
+        devicesListView.setAdapter(arrayAdapter);
+        
+      //Register the BroadcastReceiver
+        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
+        
+        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (mBluetoothAdapter == null) {
+            // Device does not support Bluetooth
+        }
+        if (!mBluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+        } else
+        	findBluetoothDevices();
+	}
 
 	/** Called when the activity is first created. */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
-        try {
-        	setContentView(R.layout.main);
-
-        	mTabHost = getTabHost();
-        	
-        	/* create graphics class */
-        	float[] data = new float[500];
-    		Random generator = new Random();
-    		for (int i = 0; i < data.length; i++) {
-    			data[i] = generator.nextFloat() * 32768;
-    		}
-        	//float[] values = new float[] { 2.0f,1.5f, 2.5f, 1.0f , 3.0f };
-    		String[] verlabels = new String[] { "32768", "0", "-32768" };
-    		String[] horlabels = new String[] { "0", "100", "200", "300", "400", "500" };
-    		mGraphView = new GraphView(EcgViewActivity.this, 
-    				data, "GraphViewDemo",horlabels, verlabels, GraphView.LINE);
-    		LinearLayout layout = (LinearLayout) findViewById(R.id.GraphLayout1);
-    		layout.addView(mGraphView);
-        	
-        	mTabHost.addTab(mTabHost.newTabSpec("tab_test1").setIndicator("Cihaz").setContent(R.id.ListView1));
-            mTabHost.addTab(mTabHost.newTabSpec("tab_test2").setIndicator("TAB 2").setContent(R.id.gridview1));
-            mTabHost.addTab(mTabHost.newTabSpec("tab_test3").setIndicator("TAB 3").setContent(R.id.textview2));
-            mTabHost.addTab(mTabHost.newTabSpec("tab_test4").setIndicator("Grafik").setContent(R.id.GraphLayout1));
-                        
-            mTabHost.setCurrentTab(0);
-        	
-            mServer = new ServerConnection();
-            new Thread(mServer).start();
-            
-            devicesListView = (ListView)findViewById(R.id.ListView1);
-            devicesListView.setOnItemClickListener(new OnItemClickListener() {
-            	public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-            		String macaddr = arrayAdapter.getItem(position).split("\n")[1];
-            		//BluetoothDevice device = mBluetoothAdapter.getRemoteDevice("00:1D:43:00:C3:E0");
-            		BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(macaddr);
-            		currentDeviceIndex = position;
-            		try {
-            			mConnectThread = new ConnectThread(device);
-            			mConnectThread.start();
-    				} catch (Exception e) {
-    					// TODO: handle exception
-    					Toast.makeText(getApplicationContext(), e.toString(), 2000).show();
-    				}
-            	}
-            });
-            
-            arrayAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
-            devicesListView.setAdapter(arrayAdapter);
-            
-            //Register the BroadcastReceiver
-            IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-            registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
-            
-            mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-            if (mBluetoothAdapter == null) {
-                // Device does not support Bluetooth
-            }
-            if (!mBluetoothAdapter.isEnabled()) {
-                Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
-            } else
-            	findBluetoothDevices();
-            
-            new Thread(new ClientThread()).start();
+        setContentView(R.layout.main);
+        mTabHost = getTabHost();
+        
+        if (savedInstanceState == null) {
+        	initGraphics();        	
+        	initTabs(0);
             
             //LocationManager locationManager = (LocationManager) getApplicationContext().getSystemService(Context.LOCATION_SERVICE);
             //locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener);	
-		} catch (Exception e) {
-			Log.v("bt", e.toString());
-		}        
+		} else {
+			try {
+				/* need to inflate layout, otherwise we crash */
+				//getLayoutInflater().inflate(R.layout.main, mTabHost.getTabContentView(), true);
+				initGraphics(savedInstanceState.getFloatArray("lastGraphData"));
+				initTabs(savedInstanceState.getInt("currentTab"));
+			} catch (Exception e) {
+				Toast.makeText(this, e.toString(), 5000).show();
+			}
+		}
+        initThreads();
+        initBtDevices();
     }
     
     @Override
-    public void onDestroy()
+    protected void onSaveInstanceState(Bundle outState) {
+    	super.onSaveInstanceState(outState);
+    	outState.putInt("currentTab", mTabHost.getCurrentTab());
+    	outState.putFloatArray("lastGraphData", mGraphView.getCurrentValues());
+    }
+    
+    @Override
+    protected void onDestroy()
     {
+    	super.onDestroy();
     	unregisterReceiver(mReceiver);
     }
     
@@ -157,7 +190,7 @@ public class EcgViewActivity extends TabActivity {
     	}
     }
     
-    public class ClientThread implements Runnable {
+    /*public class ClientThread implements Runnable {
     	private boolean connected = false;
 		public void run() {
 			try {
@@ -179,7 +212,7 @@ public class EcgViewActivity extends TabActivity {
 		public void disconnect() {
 			connected = false;
 		}
-	}
+	}*/
     
     private LocationListener locationListener = new LocationListener() {
     	public void onLocationChanged(Location location) {
@@ -435,7 +468,7 @@ public class EcgViewActivity extends TabActivity {
 					low = b;
 				else {
 					high = b;
-					//Log.v("bt", "sample " + count / 2 + ": " + (low + high * 256));
+					Log.v("btdata", "sample " + count / 2 + ": " + (low + high * 256));
 					ret = 2;
 				}
 				if (++count == 200) {
@@ -486,52 +519,60 @@ public class EcgViewActivity extends TabActivity {
     
     private Runnable mGraphUpdateTask = new Runnable() {
     	public void run() {
-    		Log.v("graph", "graph update");
-    		int size = 50;
-    		if (size < gBuffer.size()) {
-    			float[] data = new float[size];
-    			for (int i = 0; i < size; i++)
-    				data[i] = gBuffer.remove();
-    			mGraphView.addData(data);
+    		if (useRealData) {
+	    		int size = gBuffer.size();
+	    		//if (size < gBuffer.size()) {
+	    			float[] data = new float[size];
+	    			for (int i = 0; i < size; i++)
+	    				data[i] = gBuffer.remove();
+	    			mGraphView.addData(data);
+	    			spsTotal += data.length;
+	    		//}
+    		} else {
+	    		float[] data = new float[50];
+	    		Random generator = new Random();
+	    		for (int i = 0; i < data.length; i++) {
+	    			data[i] = generator.nextFloat() * 32768;
+	    		}
+	    		mGraphView.addData(data);
     		}
     		
-    		/*float[] data = new float[50];
-    		Random generator = new Random();
-    		for (int i = 0; i < data.length; i++) {
-    			data[i] = generator.nextFloat() * 32768;
-    		}*/
-    		
+    		passed += 50;
+    		if (passed >= 1000) {
+    			sps = spsTotal * 1000 / passed;
+    			spsTotal = 0;
+    			passed = 0;
+    			Log.v("btstat", "sps is " + sps);
+    		}
     		mHandler.postDelayed(mGraphUpdateTask, 50);
     	}
     };
     
     class ServerConnection implements Runnable {
-    	Socket sock;
+    	Socket sock = null;;
     	DataOutputStream out;
     	DataInputStream in;
 		@Override
 		public void run() {
 			Log.v("bt", "connecting to server...");
-			try {
-				sock = new Socket("192.168.2.6", 17536);
-				out = new DataOutputStream(sock.getOutputStream());
-				in = new DataInputStream(sock.getInputStream());
-			} catch (UnknownHostException e) {
-				Log.v("bt", "server connection error " + e.toString());
-				return;
-			} catch (IOException e) {
-				Log.v("bt", "server connection error " + e.toString());
-				return;
-			}
-			/*while (true) {
-				Log.v("v", "writing...");
+			while (true) {
 				try {
-					out.writeChars("hello Osman\n");
+					if (sock == null) {
+						sock = new Socket("192.168.1.104", 17536);
+						out = new DataOutputStream(sock.getOutputStream());
+						in = new DataInputStream(sock.getInputStream());
+					} else
+						Thread.sleep(1000);
+				} catch (UnknownHostException e) {
+					Log.v("bt", "server connection error " + e.toString());
+					sock = null;
 				} catch (IOException e) {
-					Log.v("bt", "server mes write error " + e.toString());
-					break;
+					Log.v("bt", "server connection error " + e.toString());
+					sock = null;
+				} catch (InterruptedException e) {
+
 				}
-			}*/
+			}
 		}
 		
 		synchronized public void sendData(byte[] buffer) {
@@ -550,6 +591,7 @@ public class EcgViewActivity extends TabActivity {
 				out.write(msg);
 			} catch (Exception e) {
 				Log.v("bt", "server data send error");
+				sock = null;
 			}
 		}
     	
