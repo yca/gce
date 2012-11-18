@@ -37,10 +37,12 @@ import android.os.SystemClock;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ArrayAdapter;
+import android.widget.CheckBox;
 import android.widget.GridView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TabHost;
+import android.widget.TabHost.OnTabChangeListener;
 import android.widget.Toast;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -69,6 +71,11 @@ public class EcgViewActivity extends TabActivity {
 	int passed = 0;
 	int spsTotal = 0;
 	
+	boolean useBaseline = false;
+	boolean useLpf = false;
+	boolean useNotch = false;
+	boolean useAdaptive = false;
+	
 	private Queue<Float> gBuffer = new LinkedList<Float>();
 	
 	private void initGraphics() {
@@ -92,8 +99,26 @@ public class EcgViewActivity extends TabActivity {
 	}
 	
 	private void initTabs(int current) {
+		mTabHost.setOnTabChangedListener(new OnTabChangeListener(){
+			final CheckBox checkFilter = (CheckBox) findViewById(R.id.checkFilter);
+			final CheckBox checkFilter2 = (CheckBox) findViewById(R.id.checkFilter2);
+			final CheckBox checkFilter3 = (CheckBox) findViewById(R.id.checkFilter3);
+			final CheckBox checkFilter4 = (CheckBox) findViewById(R.id.checkFilter4);
+			final CheckBox checkAutoScale = (CheckBox) findViewById(R.id.checkAutoScale);
+			@Override
+			public void onTabChanged(String tabId) {
+				Log.v("filters", "lpf:" + checkFilter2.isChecked());
+			    if(tabId.equals("tab_test4")) {
+			    	useBaseline = checkFilter.isChecked();
+			    	useLpf = checkFilter2.isChecked();
+			    	useNotch = checkFilter3.isChecked();
+			    	useAdaptive = checkFilter4.isChecked();
+			    	mGraphView.setAutoScale(checkAutoScale.isChecked());
+			    }
+			}});
+		
     	mTabHost.addTab(mTabHost.newTabSpec("tab_test1").setIndicator("Cihaz").setContent(R.id.ListView1));
-        mTabHost.addTab(mTabHost.newTabSpec("tab_test2").setIndicator("TAB 2").setContent(R.id.gridview1));
+        mTabHost.addTab(mTabHost.newTabSpec("tab_test2").setIndicator("TAB 2").setContent(R.id.settingsView));
         mTabHost.addTab(mTabHost.newTabSpec("tab_test3").setIndicator("TAB 3").setContent(R.id.textview2));
         mTabHost.addTab(mTabHost.newTabSpec("tab_test4").setIndicator("Grafik").setContent(R.id.GraphLayout1));
         mTabHost.setCurrentTab(current);
@@ -189,30 +214,6 @@ public class EcgViewActivity extends TabActivity {
     		findBluetoothDevices();
     	}
     }
-    
-    /*public class ClientThread implements Runnable {
-    	private boolean connected = false;
-		public void run() {
-			try {
-				InetAddress serverAddr = InetAddress.getByName("192.168.2.2");
-				Socket socket = new Socket(serverAddr, 17536);
-				connected = true;
-				Log.v("socket", "connected to " + serverAddr.toString());
-				PrintWriter out = new PrintWriter(socket.getOutputStream());
-				while (connected) {
-					out.println("Wake-up Osman");
-					//wait(1000);
-				}
-			} catch (UnknownHostException e) {
-				Log.v("socket", "error: " + e.toString());
-			} catch (IOException e) {
-				Log.v("socket", "error: " + e.toString());
-			}
-		}
-		public void disconnect() {
-			connected = false;
-		}
-	}*/
     
     private LocationListener locationListener = new LocationListener() {
     	public void onLocationChanged(Location location) {
@@ -468,7 +469,7 @@ public class EcgViewActivity extends TabActivity {
 					low = b;
 				else {
 					high = b;
-					Log.v("btdata", "sample " + count / 2 + ": " + (low + high * 256));
+					//Log.v("btdata", "sample " + count / 2 + ": " + (low + high * 256));
 					ret = 2;
 				}
 				if (++count == 200) {
@@ -484,6 +485,107 @@ public class EcgViewActivity extends TabActivity {
 			}
     		return 0;
     	}
+    	
+    	int bufferLen = 83;
+    	private float[] filterBuffer = new float[bufferLen];
+    	
+    	private double[] lpf95 = { 4.14419526790981e-08,	6.11194716823034e-07,
+    			4.36444420771491e-06,	2.00461827828929e-05,	6.63177754011245e-05,
+    			0.000167712939202544,	0.000335857076402041,	0.000544384737916168,
+    			0.000723850547541967,	0.000795352502748648,   0.000723850547541967,
+    			0.000544384737916168,	0.000335857076402041,	0.000167712939202544,
+    			6.63177754011245e-05,	2.00461827828929e-05,	4.36444420771491e-06,
+    			6.11194716823034e-07,	4.14419526790981e-08
+    			};
+    	private double[] lpf50 = { 0.00365940233550856,	0.0139072024889790,
+    			0.0331252259609651,	0.0591580641475665,	0.0849136426174818,	0.101082711907058,	
+    			0.101082711907058,	0.0849136426174818,	0.0591580641475665,	0.0331252259609651,
+    			0.0139072024889790,	0.00365940233550856 
+    			};
+    	private double[] notch50 = { 0.00088583,0.0037832,0.0084075,0.011818,0.0098934,0.0021063,-0.0060389,-0.0069838,0.00034588,0.0077213,0.0057391,-0.0043154,-0.010214,-0.0030315,0.00987,0.011624,-0.0027096,-0.016452,-0.0099164,0.012446,0.022471,0.0025067,-0.026683,-0.025142,0.01449,0.046361,0.019298,-0.051863,-0.079066,0.015618,0.20553,0.36121,0.36121,0.20553,0.015618,-0.079066,-0.051863,0.019298,0.046361,0.01449,-0.025142,-0.026683,0.0025067,0.022471,0.012446,-0.0099164,-0.016452,-0.0027096,0.011624,0.00987,-0.0030315,-0.010214,-0.0043154,0.0057391,0.0077213,0.00034588,-0.0069838,-0.0060389,0.0021063,0.0098934,0.011818,0.0084075,0.0037832,0.00088583 };
+
+    	private float averagingFilter(int len) {
+    		float sum = 0;
+    		for (int i = 0; i < len; i++)
+    			sum += filterBuffer[bufferLen - len + i];
+    		return sum / len;
+    	}
+    	
+    	private float lpf(double[] filt) {
+    		int len = filt.length;
+    		float sum = 0;
+    		for (int i = 0; i < len; i++)
+    			sum += filterBuffer[bufferLen - len + i] * filt[i];
+    		return sum;
+    	}
+    	
+    	private float adaptiveFilter(float stepSize, float offset) {
+    		float u = stepSize;
+    		float b = offset;
+    		
+    		int signalSize = 10;
+    		int filterSize = signalSize;
+    		float[] x = new float[filterSize];
+    		float[] output = new float[signalSize];
+    		float[] error = new float[signalSize];
+    		float[] weights = new float[filterSize];
+    		for (int i = 0; i < filterSize; i++) {
+    			x[i] = 0;
+    			weights[i] = 0;
+    			output[i] = 0; //TODO:
+    			error[i] = 0; //TODO:
+    		}
+    		
+    		float[] desired = new float[signalSize];
+    		System.arraycopy(filterBuffer, bufferLen - signalSize - 10, desired, 0, signalSize);
+
+    		for (int i = 0; i < signalSize; ++i) {
+    			/* shift input data holder */
+    			for (int j = filterSize - 1; j > 0; --j)
+    				x[j] = x[j - 1];
+    			x[0] = filterBuffer[bufferLen - signalSize + i];
+
+    			/* filter data */
+    			output[i] = 0;
+    			float normX = 0;
+    			for (int j = 0; j < filterSize; ++j) {
+    				output[i] += weights[j] * x[j];
+    				normX += x[j] * x[j];
+    			}
+
+    			/* update coefficients */
+    			error[i] = desired[i] - output[i];
+    			for (int j = 0; j < filterSize; ++j) {
+    				weights[j] += u / (normX + b) * error[i] * x[j];
+    			}
+    		}
+    		return output[signalSize - 1];
+    	}
+
+    	private float filterData(float data) {
+    		if (useBaseline == false && useLpf == false)
+    			return data;
+    		//Log.v("filters", "filtering: " + filterData);
+    		System.arraycopy(filterBuffer, 1, filterBuffer, 0, bufferLen - 1);
+    		filterBuffer[bufferLen - 1] = data;
+    		
+    		if (useBaseline) {
+    			/* baseline removal */
+    			data -= averagingFilter(bufferLen);
+    		}
+    		
+    		if (useLpf)
+    			data = lpf(lpf95);
+    		
+    		if (useNotch)
+    			data = lpf(notch50);
+    		
+    		if (useAdaptive)
+    			data = adaptiveFilter(0.1f, 0);
+    		
+    		return data;
+    	}
+    	
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
@@ -492,17 +594,24 @@ public class EcgViewActivity extends TabActivity {
                 byte[] readBuf = (byte[]) msg.obj;
                 for (int i = 0; i < len; i++) {
                 	if (checkByte(readBuf[i]) == 2) {
-                		//low = 1;//i % 256;
-                		//high = 1;//i / 256;
+                		float data = filterData((float) (low + 256 * high));
+                		gBuffer.offer(data);
+                		//gBuffer.offer((float) (low + 256 * high));
+                		
+                		int newdat = (int)(data * 1000);
+                		low = newdat & 0xff;
+                		high = (newdat >> 8) & 0xff;
                 		fBuffer[fPos] = (byte) low;
                 		fBuffer[fPos + 1] = (byte) high;
-                		gBuffer.offer((float) (low + 256 * high));
                 		fPos += 2;
                 		if (fPos == fBuffer.length) {
                 			mServer.sendData(fBuffer, fBuffer.length);
                 			fPos = 0;
                 		}
-                	}
+                	} else if (readBuf[i] == 0x78 && state == 0x99) {
+				/* read data counter */
+				Log.v("msgdbg", "reading counter");
+			}
                 }
                 break;
             case MESSAGE_DEVICE_NAME:
@@ -558,16 +667,18 @@ public class EcgViewActivity extends TabActivity {
 			while (true) {
 				try {
 					if (sock == null) {
-						sock = new Socket("192.168.1.104", 17536);
+						sock = new Socket("178.233.147.5", 17536);
 						out = new DataOutputStream(sock.getOutputStream());
 						in = new DataInputStream(sock.getInputStream());
 					} else
 						Thread.sleep(1000);
 				} catch (UnknownHostException e) {
 					Log.v("bt", "server connection error " + e.toString());
+					//Toast.makeText(getApplicationContext(), "server connection error: " + e.toString(), 5000).show();
 					sock = null;
 				} catch (IOException e) {
 					Log.v("bt", "server connection error " + e.toString());
+					//Toast.makeText(getApplicationContext(), "server connection error: " + e.toString(), 5000).show();
 					sock = null;
 				} catch (InterruptedException e) {
 
